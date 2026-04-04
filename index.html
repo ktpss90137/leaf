@@ -1,0 +1,1432 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🍁 小楓葉 CRM 系統</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<!-- Firebase v9 compat -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#fffbf0;color:#1f2937}
+  ::-webkit-scrollbar{width:6px;height:6px}
+  ::-webkit-scrollbar-track{background:#fef3c7}
+  ::-webkit-scrollbar-thumb{background:#f59e0b;border-radius:3px}
+  input,select,textarea{font-family:inherit}
+  textarea{resize:vertical}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<!-- ════════════════════════════════════════════════════
+     🔥 Firebase 初始化設定
+     請將下方的 YOUR_XXX 換成你的 Firebase 專案資訊
+     （Firebase 控制台 → 專案設定 → 您的應用程式 → SDK 設定）
+     ════════════════════════════════════════════════════ -->
+<script>
+  const firebaseConfig = {
+    apiKey:            "AIzaSyDdugG-LeqevyoypUnFflv1NrJ10fQHHTw",
+    authDomain:        "leafcrm.firebaseapp.com",
+    projectId:         "leafcrm",
+    storageBucket:     "leafcrm.firebasestorage.app",
+    messagingSenderId: "48753447125",
+    appId:             "1:48753447125:web:03537b4562486b3453925c"
+  };
+  firebase.initializeApp(firebaseConfig);
+  window.db   = firebase.firestore();
+  window.auth = firebase.auth();
+</script>
+
+<script type="text/babel">
+const { useState, useMemo, useRef, useEffect } = React;
+
+/* ─── 行程類型 ─── */
+const ATYPES = {
+  consultation:{ label:'課後諮詢', emoji:'💬', bg:'#eff6ff', text:'#1d4ed8', border:'#bfdbfe' },
+  group:       { label:'課後團課', emoji:'👥', bg:'#f0fdf4', text:'#15803d', border:'#bbf7d0' },
+  monetization:{ label:'變現工作訪', emoji:'💰', bg:'#faf5ff', text:'#7e22ce', border:'#e9d5ff' },
+};
+const CLASS_LIST  = ['A班','B班','C班','D班'];
+const REPORT_FIELDS = [
+  { key:'monthlyReport',    label:'📋 本月學員狀況回報' },
+  { key:'midMonthReport',   label:'📌 月中狀況回報' },  // 舊格式相容
+  { key:'endMonthReport',   label:'📋 月底狀況回報' },  // 舊格式相容
+  { key:'learningGoals',    label:'🎯 學習目標 / 現況' },
+  { key:'mentorReflection', label:'💭 學伴心得 & 個人成長目標' },
+  { key:'careReport',       label:'🤝 學員被照顧的如何？' },
+  { key:'gained',           label:'✨ 從小楓葉身上的收穫' },
+  { key:'notes',            label:'🗒️ 其他備注' },
+];
+
+/* ─── 初始資料（全空白，從頭開始）─── */
+const INIT_STUDENTS   = [];
+const INIT_ACTIVITIES = [
+  /* ── 1月 2026 ── */
+  {id:10101,title:'大會',              type:'group',        date:'2026-01-05',students:[],notes:'19:30',fromSheet:true},
+  {id:10102,title:'講座',              type:'group',        date:'2026-01-16',students:[],notes:'19:30',fromSheet:true},
+  {id:10103,title:'能量學 二階',        type:'group',        date:'2026-01-17',students:[],notes:'1/17～1/20 六～二',fromSheet:true},
+  {id:10104,title:'能量學 二階',        type:'group',        date:'2026-01-22',students:[],notes:'1/22～1/25 四～日',fromSheet:true},
+  {id:10105,title:'斜槓二日講',         type:'group',        date:'2026-01-24',students:[],notes:'1/24～1/25 六日',fromSheet:true},
+  {id:10106,title:'能量學 二階',        type:'group',        date:'2026-01-27',students:[],notes:'1/27～1/30 二～五',fromSheet:true},
+  /* ── 2月 2026 ── */
+  {id:10201,title:'斜槓體驗活動',       type:'group',        date:'2026-02-01',students:[],notes:'14:00-16:00',fromSheet:true},
+  {id:10202,title:'大會',              type:'group',        date:'2026-02-02',students:[],notes:'19:30',fromSheet:true},
+  {id:10203,title:'尾牙',              type:'group',        date:'2026-02-08',students:[],notes:'18:00',fromSheet:true},
+  {id:10204,title:'春節過年',           type:'group',        date:'2026-02-14',students:[],notes:'2/14～2/22',fromSheet:true},
+  {id:10205,title:'開工',              type:'group',        date:'2026-02-23',students:[],notes:'',fromSheet:true},
+  {id:10206,title:'補假 & 228連假',     type:'group',        date:'2026-02-27',students:[],notes:'2/27～3/1',fromSheet:true},
+  /* ── 3月 2026 ── */
+  {id:10301,title:'大會',              type:'group',        date:'2026-03-02',students:[],notes:'19:30',fromSheet:true},
+  {id:10302,title:'講座',              type:'group',        date:'2026-03-06',students:[],notes:'19:30',fromSheet:true},
+  {id:10303,title:'能量學 五階',        type:'group',        date:'2026-03-07',students:[],notes:'3/7～3/10 六～二',fromSheet:true},
+  {id:10304,title:'能量學 五階',        type:'group',        date:'2026-03-11',students:[],notes:'3/11～3/15 四～日',fromSheet:true},
+  {id:10305,title:'能量學 五階',        type:'group',        date:'2026-03-17',students:[],notes:'3/17～3/20 二～五',fromSheet:true},
+  {id:10306,title:'斜槓二日講',         type:'group',        date:'2026-03-21',students:[],notes:'3/21～3/22 六日',fromSheet:true},
+  {id:10307,title:'天賦讀心術 團課',    type:'group',        date:'2026-03-24',students:[],notes:'20:00 週二團課',fromSheet:true},
+  {id:10308,title:'活動',              type:'group',        date:'2026-03-29',students:[],notes:'14:00-16:00',fromSheet:true},
+  {id:10309,title:'個人品牌實操班 團課', type:'group',        date:'2026-03-31',students:[],notes:'20:00 週二團課',fromSheet:true},
+  /* ── 4月 2026 ── */
+  {id:10401,title:'大會',              type:'group',        date:'2026-04-01',students:[],notes:'19:30',fromSheet:true},
+  {id:10402,title:'清明連假',           type:'group',        date:'2026-04-03',students:[],notes:'4/3～4/6',fromSheet:true},
+  {id:10403,title:'財富順流班 團課',    type:'group',        date:'2026-04-07',students:[],notes:'20:00 週二團課',fromSheet:true},
+  {id:10404,title:'斜槓半日坊',         type:'group',        date:'2026-04-12',students:[],notes:'14:00-17:00',fromSheet:true},
+  {id:10405,title:'斜槓同學會 團課',    type:'group',        date:'2026-04-14',students:[],notes:'20:00 週二團課',fromSheet:true},
+  {id:10406,title:'香港出差',           type:'group',        date:'2026-04-16',students:[],notes:'4/16～4/17',fromSheet:true},
+  {id:10407,title:'能量學 一階',        type:'group',        date:'2026-04-18',students:[],notes:'4/18～4/21 六～二',fromSheet:true},
+  {id:10408,title:'能量學 一階',        type:'group',        date:'2026-04-23',students:[],notes:'4/23～4/26 四～日',fromSheet:true},
+  {id:10409,title:'斜槓變現班－開業',   type:'monetization', date:'2026-04-25',students:[],notes:'10:00-17:00',fromSheet:true},
+  {id:10410,title:'能量學 一階',        type:'group',        date:'2026-04-28',students:[],notes:'4/28～5/1 二～五',fromSheet:true},
+  {id:10411,title:'線上財務分帳 團課',  type:'group',        date:'2026-04-28',students:[],notes:'20:00 週二團課',fromSheet:true},
+  /* ── 5月 2026 ── */
+  {id:10501,title:'大會',              type:'group',        date:'2026-05-04',students:[],notes:'19:30',fromSheet:true},
+  {id:10502,title:'俱樂部－晚聚',       type:'group',        date:'2026-05-07',students:[],notes:'19:30-21:30',fromSheet:true},
+  {id:10503,title:'母親節',             type:'group',        date:'2026-05-10',students:[],notes:'',fromSheet:true},
+  {id:10504,title:'斜槓半日坊',         type:'group',        date:'2026-05-16',students:[],notes:'14:00-17:00',fromSheet:true},
+  {id:10505,title:'斜槓變現班－小聚',   type:'monetization', date:'2026-05-20',students:[],notes:'19:30-21:30',fromSheet:true},
+  {id:10506,title:'斜槓兩日工作坊',     type:'monetization', date:'2026-05-30',students:[],notes:'5/30～5/31 六日',fromSheet:true},
+  /* ── 6月 2026 ── */
+  {id:10601,title:'大會',              type:'group',        date:'2026-06-01',students:[],notes:'19:30',fromSheet:true},
+  {id:10602,title:'天賦讀心術 團課',    type:'group',        date:'2026-06-02',students:[],notes:'20:00 週二團課',fromSheet:true},
+  {id:10603,title:'俱樂部（黃金傳說）', type:'group',        date:'2026-06-06',students:[],notes:'14:00-16:00',fromSheet:true},
+  {id:10604,title:'能量學 二階',        type:'group',        date:'2026-06-06',students:[],notes:'6/6～6/9 六～二',fromSheet:true},
+  {id:10605,title:'個人品牌實操班 團課', type:'group',        date:'2026-06-09',students:[],notes:'20:00 週二團課',fromSheet:true},
+  {id:10606,title:'能量學 二階',        type:'group',        date:'2026-06-11',students:[],notes:'6/11～6/14 四～日',fromSheet:true},
+  {id:10607,title:'財富順流班 團課',    type:'group',        date:'2026-06-16',students:[],notes:'20:00 週二團課',fromSheet:true},
+  {id:10608,title:'能量學 二階',        type:'group',        date:'2026-06-16',students:[],notes:'6/16～6/19 二～五',fromSheet:true},
+  {id:10609,title:'端午連假',           type:'group',        date:'2026-06-19',students:[],notes:'6/19～6/21',fromSheet:true},
+  {id:10610,title:'斜槓變現班－結訓',   type:'monetization', date:'2026-06-21',students:[],notes:'10:00-17:00',fromSheet:true},
+  {id:10611,title:'端午聚餐',           type:'group',        date:'2026-06-22',students:[],notes:'19:30',fromSheet:true},
+  {id:10612,title:'斜槓同學會 團課',    type:'group',        date:'2026-06-23',students:[],notes:'20:00 週二團課',fromSheet:true},
+  /* ── 7月 2026 ── */
+  {id:10701,title:'大會',              type:'group',        date:'2026-07-01',students:[],notes:'19:30',fromSheet:true},
+  {id:10702,title:'能量學 三階',        type:'group',        date:'2026-07-04',students:[],notes:'7/4～7/7 六～二',fromSheet:true},
+  {id:10703,title:'能量學 三階',        type:'group',        date:'2026-07-09',students:[],notes:'7/9～7/12 四～日',fromSheet:true},
+  {id:10704,title:'斜槓半日坊',         type:'group',        date:'2026-07-11',students:[],notes:'14:00-17:00',fromSheet:true},
+  {id:10705,title:'能量學 三階',        type:'group',        date:'2026-07-14',students:[],notes:'7/14～7/17 二～五',fromSheet:true},
+  {id:10706,title:'俱樂部活動',         type:'group',        date:'2026-07-16',students:[],notes:'19:30-21:30',fromSheet:true},
+  {id:10707,title:'斜槓兩日工作坊',     type:'monetization', date:'2026-07-25',students:[],notes:'7/25～7/26 六日',fromSheet:true},
+  /* ── 8月 2026 ── */
+  {id:10801,title:'大會',              type:'group',        date:'2026-08-03',students:[],notes:'19:30',fromSheet:true},
+  {id:10802,title:'天賦讀心術 團課',    type:'group',        date:'2026-08-04',students:[],notes:'20:00 週二團課',fromSheet:true},
+  {id:10803,title:'父親節',             type:'group',        date:'2026-08-08',students:[],notes:'',fromSheet:true},
+  {id:10804,title:'個人品牌實操班 團課', type:'group',        date:'2026-08-11',students:[],notes:'20:00 週二團課',fromSheet:true},
+  {id:10805,title:'農曆七月開門',       type:'group',        date:'2026-08-13',students:[],notes:'農曆七月 開門～9/10',fromSheet:true},
+  {id:10806,title:'俱樂部活動',         type:'group',        date:'2026-08-16',students:[],notes:'14:00-16:00',fromSheet:true},
+  {id:10807,title:'財富順流班 團課',    type:'group',        date:'2026-08-18',students:[],notes:'20:00 週二團課',fromSheet:true},
+  {id:10808,title:'斜槓同學會 團課',    type:'group',        date:'2026-08-25',students:[],notes:'20:00 週二團課',fromSheet:true},
+  /* ── 9月 2026 ── */
+  {id:10901,title:'大會',              type:'group',        date:'2026-08-31',students:[],notes:'19:30',fromSheet:true},
+  {id:10902,title:'斜槓半日坊',         type:'group',        date:'2026-09-05',students:[],notes:'14:00-17:00',fromSheet:true},
+  {id:10903,title:'俱樂部',             type:'group',        date:'2026-09-17',students:[],notes:'19:30-21:30',fromSheet:true},
+  {id:10904,title:'斜槓變現班－開業',   type:'monetization', date:'2026-09-20',students:[],notes:'10:00-17:00',fromSheet:true},
+  {id:10905,title:'中秋聚餐',           type:'group',        date:'2026-09-21',students:[],notes:'19:30',fromSheet:true},
+  {id:10906,title:'中秋連假',           type:'group',        date:'2026-09-25',students:[],notes:'9/25～9/27 五六日',fromSheet:true},
+  {id:10907,title:'教師節放假',          type:'group',        date:'2026-09-28',students:[],notes:'',fromSheet:true},
+  /* ── 10月 2026 ── */
+  {id:11001,title:'大會',              type:'group',        date:'2026-10-05',students:[],notes:'19:30',fromSheet:true},
+  {id:11002,title:'雙十節連假',          type:'group',        date:'2026-10-09',students:[],notes:'10/9～10/11 五六日',fromSheet:true},
+  {id:11003,title:'俱樂部',             type:'group',        date:'2026-10-17',students:[],notes:'14:00-16:00',fromSheet:true},
+  {id:11004,title:'能量學 四階',        type:'group',        date:'2026-10-17',students:[],notes:'10/17～10/20 六～二',fromSheet:true},
+  {id:11005,title:'天賦讀心術 團課',    type:'group',        date:'2026-10-20',students:[],notes:'20:00 週二團課',fromSheet:true},
+  {id:11006,title:'能量學 四階',        type:'group',        date:'2026-10-22',students:[],notes:'10/22～10/25 四～日',fromSheet:true},
+  {id:11007,title:'斜槓變現班－小聚',   type:'monetization', date:'2026-10-22',students:[],notes:'19:30-21:30',fromSheet:true},
+  {id:11008,title:'光復節連假',          type:'group',        date:'2026-10-24',students:[],notes:'10/24～10/26 六日一',fromSheet:true},
+  {id:11009,title:'斜槓兩日工作坊',     type:'monetization', date:'2026-10-24',students:[],notes:'10/24～10/25 六日',fromSheet:true},
+  {id:11010,title:'能量學 四階',        type:'group',        date:'2026-10-27',students:[],notes:'10/27～10/30 二～五',fromSheet:true},
+  {id:11011,title:'個人品牌實操班 團課', type:'group',        date:'2026-10-27',students:[],notes:'20:00 週二團課',fromSheet:true},
+  {id:11012,title:'斜槓半日坊',         type:'group',        date:'2026-10-31',students:[],notes:'14:00-17:00',fromSheet:true},
+  /* ── 11月 2026 ── */
+  {id:11101,title:'大會',              type:'group',        date:'2026-11-02',students:[],notes:'19:30',fromSheet:true},
+  {id:11102,title:'財富順流班 團課',    type:'group',        date:'2026-11-03',students:[],notes:'20:00 週二團課',fromSheet:true},
+  {id:11103,title:'立冬進補',           type:'group',        date:'2026-11-07',students:[],notes:'',fromSheet:true},
+  {id:11104,title:'同學會 團課',        type:'group',        date:'2026-11-10',students:[],notes:'20:00 週二團課',fromSheet:true},
+  {id:11105,title:'俱樂部',             type:'group',        date:'2026-11-19',students:[],notes:'19:30-21:30',fromSheet:true},
+  {id:11106,title:'斜槓變現班－結訓',   type:'monetization', date:'2026-11-21',students:[],notes:'10:00-17:00',fromSheet:true},
+  /* ── 12月 2026 ── */
+  {id:11201,title:'大會',              type:'group',        date:'2026-11-30',students:[],notes:'19:30',fromSheet:true},
+  {id:11202,title:'斜槓半日坊',         type:'group',        date:'2026-12-05',students:[],notes:'14:00-17:00',fromSheet:true},
+  {id:11203,title:'能量學 一階',        type:'group',        date:'2026-12-05',students:[],notes:'12/5～12/8 六～二',fromSheet:true},
+  {id:11204,title:'能量學 一階',        type:'group',        date:'2026-12-10',students:[],notes:'12/10～12/13 四～日',fromSheet:true},
+  {id:11205,title:'斜槓兩日工作坊',     type:'monetization', date:'2026-12-12',students:[],notes:'12/12～12/13 六日',fromSheet:true},
+  {id:11206,title:'天賦讀心術 團課',    type:'group',        date:'2026-12-15',students:[],notes:'20:00 週二團課',fromSheet:true},
+  {id:11207,title:'能量學 一階',        type:'group',        date:'2026-12-15',students:[],notes:'12/15～12/18 二～五',fromSheet:true},
+  {id:11208,title:'俱樂部 x 聖誕活動', type:'group',        date:'2026-12-20',students:[],notes:'14:00-16:00 待確認',fromSheet:true},
+  {id:11209,title:'個人品牌實操班 團課', type:'group',        date:'2026-12-22',students:[],notes:'20:00 週二團課',fromSheet:true},
+  {id:11210,title:'冬至',              type:'group',        date:'2026-12-22',students:[],notes:'',fromSheet:true},
+  {id:11211,title:'行憲紀念日、聖誕節', type:'group',        date:'2026-12-25',students:[],notes:'',fromSheet:true},
+  {id:11212,title:'財富順流班 團課',    type:'group',        date:'2026-12-29',students:[],notes:'20:00 週二團課',fromSheet:true},
+  /* ── 1月 2027 ── */
+  {id:11301,title:'斜槓同學會 團課',    type:'group',        date:'2027-01-05',students:[],notes:'20:00 週二團課',fromSheet:true},
+];
+
+/* ─── 小工具元件 ─── */
+function Stars({ value, onChange, ro }) {
+  const [hov, setHov] = useState(0);
+  return (
+    <div style={{display:'flex',gap:2}}>
+      {[1,2,3,4,5].map(s=>(
+        <span key={s}
+          onClick={()=>!ro && onChange && onChange(s)}
+          onMouseEnter={()=>!ro && setHov(s)}
+          onMouseLeave={()=>!ro && setHov(0)}
+          style={{fontSize:20,cursor:ro?'default':'pointer',color:(hov||value)>=s?'#f59e0b':'#e5e7eb',userSelect:'none'}}>★</span>
+      ))}
+    </div>
+  );
+}
+
+function Badge({ score }) {
+  const map = [
+    [5,'#dcfce7','#15803d','融入良好'],
+    [3,'#fef3c7','#b45309','穩定推進'],
+    [2,'#ffedd5','#c2410c','需要關注'],
+    [1,'#fee2e2','#b91c1c','待追蹤'],
+    [0,'#f3f4f6','#6b7280','尚未評分'],
+  ];
+  const [, bg, color, label] = map.find(([t])=>score>=t) || map[map.length-1];
+  return <span style={{background:bg,color,padding:'2px 8px',borderRadius:99,fontSize:11,fontWeight:600}}>{label}</span>;
+}
+
+function Avt({ name, sz=36 }) {
+  return (
+    <div style={{width:sz,height:sz,borderRadius:sz/2,background:'#fef3c7',color:'#b45309',
+      display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700,fontSize:sz*0.45,flexShrink:0}}>
+      {name?.[0]||'?'}
+    </div>
+  );
+}
+
+function Modal({ title, onClose, children }) {
+  return (
+    <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.4)',zIndex:100,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:'#fff',borderRadius:16,width:'100%',maxWidth:600,maxHeight:'90vh',overflowY:'auto',boxShadow:'0 20px 60px rgba(0,0,0,.3)'}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'16px 20px',borderBottom:'1px solid #fef3c7',position:'sticky',top:0,background:'#fff',zIndex:1}}>
+          <span style={{fontWeight:700,fontSize:16}}>{title}</span>
+          <button onClick={onClose} style={{background:'none',border:'none',fontSize:18,cursor:'pointer',color:'#9ca3af'}}>✕</button>
+        </div>
+        <div style={{padding:20}}>{children}</div>
+      </div>
+    </div>
+  );
+}
+
+const inp = {width:'100%',border:'1px solid #e5e7eb',borderRadius:8,padding:'8px 12px',fontSize:13,outline:'none',fontFamily:'inherit'};
+function Field({ label, value, onChange, ph, multi }) {
+  return (
+    <div style={{marginBottom:12}}>
+      <div style={{fontSize:11,fontWeight:600,color:'#6b7280',marginBottom:4}}>{label}</div>
+      {multi
+        ? <textarea style={{...inp,resize:'vertical'}} rows={3} value={value} onChange={e=>onChange(e.target.value)} placeholder={ph}/>
+        : <input style={inp} value={value} onChange={e=>onChange(e.target.value)} placeholder={ph}/>
+      }
+    </div>
+  );
+}
+
+/* ─── 學員新增 / 編輯表單（定義在外層，避免每次 render 重建導致輸入框失焦）─── */
+function StuForm({ data, setData, onSave, onCancel, isNew }) {
+  return (
+    <div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+        <Field label="姓名 *" value={data.name} onChange={v=>setData(d=>({...d,name:v}))} ph="小楓葉姓名"/>
+        <Field label="配對小天使 *" value={data.angel} onChange={v=>setData(d=>({...d,angel:v}))} ph="輸入小天使名字"/>
+        <Field label="班級" value={data.cls} onChange={v=>setData(d=>({...d,cls:v}))} ph="例：A班、B班..."/>
+        <div>
+          <div style={{fontSize:11,fontWeight:600,color:'#6b7280',marginBottom:4}}>APP 使用狀態</div>
+          <div style={{display:'flex',gap:16,marginTop:8}}>
+            {[true,false].map(v=>(
+              <label key={String(v)} style={{display:'flex',alignItems:'center',gap:6,cursor:'pointer',fontSize:13}}>
+                <input type="radio" checked={data.appUsage===v} onChange={()=>setData(d=>({...d,appUsage:v}))} style={{accentColor:'#f59e0b'}}/>
+                {v?'✓ 使用中':'未使用'}
+              </label>
+            ))}
+          </div>
+        </div>
+      </div>
+      <Field label="斜槓項目" value={data.slashProject} onChange={v=>setData(d=>({...d,slashProject:v}))} ph="例：自媒體、財務顧問..."/>
+      <Field label="顧問諮詢方向" value={data.consultDir} onChange={v=>setData(d=>({...d,consultDir:v}))} ph="目前諮詢方向備注..." multi/>
+      <div style={{display:'flex',justifyContent:'flex-end',gap:8,marginTop:16}}>
+        <button onClick={onCancel} style={{padding:'8px 16px',borderRadius:8,border:'1px solid #e5e7eb',background:'#fff',cursor:'pointer',fontSize:13}}>取消</button>
+        <button onClick={onSave} style={{padding:'8px 20px',borderRadius:8,border:'none',background:'#f59e0b',color:'#fff',cursor:'pointer',fontSize:13,fontWeight:600}}>
+          {isNew?'新增學員':'儲存修改'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ─── 儀表板 ─── */
+function Dashboard({ students, activities }) {
+  const lastScore = s => s.reports[s.reports.length-1]?.envScore||0;
+  const avg = students.length ? (students.reduce((a,s)=>a+lastScore(s),0)/students.length).toFixed(1) : '—';
+  const today = new Date().toISOString().slice(0,10);
+  const upcoming = [...activities].sort((a,b)=>a.date.localeCompare(b.date)).filter(a=>a.date>=today);
+  const stats = [
+    { v:students.length, l:'🍁 小楓葉總數', g:'#f59e0b,#fb923c' },
+    { v:[...new Set(students.map(s=>s.angel))].length, l:'😇 小天使人數', g:'#fbbf24,#f59e0b' },
+    { v:avg, l:'⭐ 平均融入評分', g:'#fb923c,#f59e0b' },
+    { v:[...new Set(students.map(s=>s.cls).filter(Boolean))].length||0, l:'🏫 班級數量', g:'#d97706,#b45309' },
+  ];
+  return (
+    <div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:12,marginBottom:20}}>
+        {stats.map(({v,l,g})=>(
+          <div key={l} style={{background:`linear-gradient(135deg,${g})`,borderRadius:16,padding:'20px 16px',color:'#fff'}}>
+            <div style={{fontSize:36,fontWeight:800}}>{v}</div>
+            <div style={{fontSize:12,marginTop:4,opacity:.9}}>{l}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{background:'#fff',borderRadius:16,border:'1px solid #fef3c7',marginBottom:16,overflow:'hidden'}}>
+        <div style={{padding:'14px 20px',borderBottom:'1px solid #fef3c7',fontWeight:700,color:'#374151'}}>🍁 學員總覽</div>
+        <div style={{overflowX:'auto'}}>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+            <thead>
+              <tr style={{background:'#fffbf0'}}>
+                {['小楓葉','小天使','班級','斜槓項目','環境融入','狀態','APP'].map(h=>(
+                  <th key={h} style={{textAlign:'left',padding:'10px 14px',fontSize:11,color:'#9ca3af',fontWeight:600}}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {students.length===0 && (
+                <tr><td colSpan={7} style={{padding:'40px 0',textAlign:'center',color:'#9ca3af'}}>
+                  <div style={{fontSize:32,marginBottom:8}}>🍁</div>
+                  <div style={{fontSize:13}}>尚無學員，請到「學員管理」新增第一位小楓葉</div>
+                </td></tr>
+              )}
+              {students.map(s=>{
+                const sc = lastScore(s);
+                return (
+                  <tr key={s.id} style={{borderTop:'1px solid #fef9ec'}}>
+                    <td style={{padding:'10px 14px'}}>
+                      <div style={{display:'flex',alignItems:'center',gap:8}}>
+                        <Avt name={s.name} sz={30}/>
+                        <span style={{fontWeight:600}}>{s.name}</span>
+                      </div>
+                    </td>
+                    <td style={{padding:'10px 14px',color:'#6b7280'}}>😇 {s.angel||'—'}</td>
+                    <td style={{padding:'10px 14px'}}><span style={{background:'#fef3c7',color:'#b45309',padding:'2px 8px',borderRadius:6,fontSize:11}}>{s.cls||'—'}</span></td>
+                    <td style={{padding:'10px 14px',color:'#6b7280'}}>{s.slashProject||'—'}</td>
+                    <td style={{padding:'10px 14px'}}><Stars value={sc} ro/></td>
+                    <td style={{padding:'10px 14px'}}><Badge score={sc}/></td>
+                    <td style={{padding:'10px 14px'}}>
+                      <span style={{background:s.appUsage?'#dcfce7':'#f3f4f6',color:s.appUsage?'#15803d':'#9ca3af',padding:'2px 8px',borderRadius:99,fontSize:11}}>
+                        {s.appUsage?'✓ 使用中':'未使用'}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div style={{background:'#fff',borderRadius:16,border:'1px solid #fef3c7',overflow:'hidden'}}>
+        <div style={{padding:'14px 20px',borderBottom:'1px solid #fef3c7',fontWeight:700,color:'#374151'}}>📅 近期行程</div>
+        {upcoming.length===0
+          ? <div style={{padding:32,textAlign:'center',color:'#9ca3af'}}>目前沒有未來行程</div>
+          : upcoming.slice(0,5).map(a=>{
+              const t=ATYPES[a.type]||ATYPES.group;
+              return (
+                <div key={a.id} style={{padding:'12px 20px',borderTop:'1px solid #fef9ec',display:'flex',alignItems:'center',justifyContent:'space-between',gap:12}}>
+                  <div style={{display:'flex',alignItems:'center',gap:10}}>
+                    <span style={{background:t.bg,color:t.text,border:`1px solid ${t.border}`,padding:'3px 8px',borderRadius:8,fontSize:11,whiteSpace:'nowrap'}}>{t.emoji} {t.label}</span>
+                    <span style={{fontSize:13,fontWeight:500}}>{a.title}</span>
+                    {a.students.length>0&&<span style={{fontSize:11,color:'#9ca3af'}}>· {a.students.join('、')}</span>}
+                  </div>
+                  <span style={{fontSize:11,color:'#9ca3af',flexShrink:0}}>{a.date}</span>
+                </div>
+              );
+            })
+        }
+      </div>
+    </div>
+  );
+}
+
+/* ─── 學員管理 ─── */
+function StudentsPage({ students, setStudents }) {
+  const [search, setSearch] = useState('');
+  const [fAngel, setFAngel] = useState('');
+  const [fCls, setFCls] = useState('');
+  const [sel, setSel] = useState(null);
+  const [showAdd, setShowAdd] = useState(false);
+  const [importMsg, setImportMsg] = useState('');
+  const stuFileRef = React.useRef();
+
+  const showImportMsg = m => { setImportMsg(m); setTimeout(()=>setImportMsg(''),3500); };
+
+  /* 匯入學員 JSON（支援完整備份、小天使月報、顧問紀錄） */
+  const handleStuImport = e => {
+    const f=e.target.files?.[0]; if(!f)return;
+    const r=new FileReader();
+    r.onload = ev => {
+      try {
+        const d=JSON.parse(ev.target.result);
+        /* 完整備份檔 */
+        if(Array.isArray(d.students)){
+          setStudents(d.students);
+          showImportMsg(`✓ 已匯入 ${d.students.length} 位學員資料`);
+        /* 小天使月報 */
+        } else if(d.source==='angel_subform'){
+          const newR={id:Date.now(),month:d.month,stage:d.stage,...d.report};
+          setStudents(prev=>{
+            const exists=prev.some(s=>s.name===d.studentName);
+            if(exists){
+              return prev.map(s=>{
+                if(s.name!==d.studentName)return s;
+                const idx=s.reports.findIndex(r=>r.month===d.month);
+                const reports=idx>=0?s.reports.map((r,i)=>i===idx?newR:r):[...s.reports,newR].sort((a,b)=>a.month-b.month);
+                return{...s,reports};
+              });
+            } else {
+              const newStu={id:Date.now(),name:d.studentName,angel:d.submittedBy?.name||'',cls:'',appUsage:false,slashProject:'',consultDir:'',reports:[newR],consultations:[]};
+              return [...prev,newStu];
+            }
+          });
+          showImportMsg(`✓ 已匯入小天使【${d.submittedBy?.name||''}】的月報 → ${d.studentName}`);
+        /* 顧問諮詢紀錄 */
+        } else if(d.source==='consultant_subform'){
+          setStudents(prev=>{
+            const exists=prev.some(s=>s.name===d.studentName);
+            const newC={id:Date.now(),...d.consultation,consultantName:d.submittedBy?.name||''};
+            if(exists){
+              return prev.map(s=>{
+                if(s.name!==d.studentName)return s;
+                const consultations=[...(s.consultations||[]),newC].sort((a,b)=>b.date.localeCompare(a.date));
+                const upd={consultations};
+                if(d.consultation?.slashProject)upd.slashProject=d.consultation.slashProject;
+                if(d.consultation?.consultDirection)upd.consultDir=d.consultation.consultDirection;
+                return{...s,...upd};
+              });
+            } else {
+              const newStu={id:Date.now(),name:d.studentName,angel:'',cls:'',appUsage:false,
+                slashProject:d.consultation?.slashProject||'',
+                consultDir:d.consultation?.consultDirection||'',
+                reports:[],consultations:[newC]};
+              return [...prev,newStu];
+            }
+          });
+          showImportMsg(`✓ 已匯入顧問【${d.submittedBy?.name||''}】的諮詢紀錄 → ${d.studentName}`);
+        } else {
+          showImportMsg('⚠️ 無法辨識的檔案格式');
+        }
+      } catch { showImportMsg('⚠️ 檔案格式有誤，請確認是 JSON 格式'); }
+    };
+    r.readAsText(f); e.target.value='';
+  };
+  const [editing, setEditing] = useState(null);
+
+  const tmpl = { name:'', angel:'', cls:'', appUsage:false, slashProject:'', consultDir:'', reports:[], consultations:[] };
+  const [nstu, setNstu] = useState(tmpl);
+
+  const filtered = useMemo(()=>students.filter(s=>{
+    const q=search.toLowerCase();
+    return (s.name.includes(q)||s.angel.includes(q)||s.slashProject.includes(q))
+      && (!fAngel||s.angel===fAngel) && (!fCls||s.cls===fCls);
+  }),[students,search,fAngel,fCls]);
+
+  const doAdd = () => { if(!nstu.name.trim())return; setStudents(p=>[...p,{...nstu,id:Date.now()}]); setShowAdd(false); setNstu(tmpl); };
+  const doSaveEdit = () => { setStudents(p=>p.map(s=>s.id===editing.id?editing:s)); if(sel?.id===editing.id)setSel(editing); setEditing(null); };
+  const doDelete = id => { setStudents(p=>p.filter(s=>s.id!==id)); if(sel?.id===id)setSel(null); };
+
+  const selStu = sel ? students.find(s=>s.id===sel.id) : null;
+
+  return (
+    <div>
+      {/* Toolbar */}
+      <div style={{display:'flex',flexWrap:'wrap',gap:10,marginBottom:16,alignItems:'center'}}>
+        <div style={{position:'relative',flex:'1 1 200px'}}>
+          <span style={{position:'absolute',left:10,top:'50%',transform:'translateY(-50%)',color:'#9ca3af'}}>🔍</span>
+          <input style={{...inp,paddingLeft:32}} placeholder="搜尋學員、小天使..." value={search} onChange={e=>setSearch(e.target.value)}/>
+        </div>
+        <select style={{...inp,width:'auto'}} value={fAngel} onChange={e=>setFAngel(e.target.value)}>
+          <option value=''>全部小天使</option>
+          {[...new Set(students.map(s=>s.angel).filter(Boolean))].map(a=><option key={a}>{a}</option>)}
+        </select>
+        <select style={{...inp,width:'auto'}} value={fCls} onChange={e=>setFCls(e.target.value)}>
+          <option value=''>全部班級</option>
+          {[...new Set(students.map(s=>s.cls).filter(Boolean))].map(c=><option key={c}>{c}</option>)}
+        </select>
+        <input ref={stuFileRef} type="file" accept=".json" style={{display:'none'}} onChange={handleStuImport}/>
+        <button onClick={()=>stuFileRef.current.click()} style={{padding:'8px 14px',borderRadius:10,border:'1px solid #fde68a',background:'#fffbf0',color:'#b45309',cursor:'pointer',fontSize:13,fontWeight:600,whiteSpace:'nowrap'}}>📥 匯入回報</button>
+        <button onClick={()=>setShowAdd(true)} style={{padding:'8px 16px',borderRadius:10,border:'none',background:'#f59e0b',color:'#fff',cursor:'pointer',fontSize:13,fontWeight:600,whiteSpace:'nowrap'}}>＋ 新增學員</button>
+      </div>
+      {importMsg && (
+        <div style={{marginBottom:12,background:'#f0fdf4',border:'1px solid #bbf7d0',borderRadius:10,padding:'10px 16px',fontSize:13,color:'#15803d'}}>
+          {importMsg}
+        </div>
+      )}
+
+      {/* Cards */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(250px,1fr))',gap:14}}>
+        {filtered.map(s=>{
+          const sc=s.reports[s.reports.length-1]?.envScore||0;
+          return (
+            <div key={s.id} onClick={()=>setSel(s)}
+              style={{background:'#fff',borderRadius:16,border:'1px solid #fef3c7',padding:18,cursor:'pointer',
+                transition:'box-shadow .15s',boxShadow:'0 1px 3px rgba(0,0,0,.06)'}}>
+              <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:12}}>
+                <div style={{display:'flex',alignItems:'center',gap:10}}>
+                  <Avt name={s.name} sz={44}/>
+                  <div>
+                    <div style={{fontWeight:700,fontSize:15}}>{s.name}</div>
+                    <div style={{fontSize:11,color:'#9ca3af',marginTop:2}}>😇 {s.angel} · {s.cls}</div>
+                  </div>
+                </div>
+                <Badge score={sc}/>
+              </div>
+              <Stars value={sc} ro/>
+              <div style={{marginTop:12,paddingTop:12,borderTop:'1px solid #fef9ec',fontSize:12,color:'#9ca3af',lineHeight:1.8}}>
+                {s.slashProject && <div>🚀 {s.slashProject}</div>}
+                <div>📋 月報：{s.reports.length} 份</div>
+                <div>📱 APP：{s.appUsage?'使用中':'未使用'}</div>
+              </div>
+            </div>
+          );
+        })}
+        {filtered.length===0 && (
+          <div style={{gridColumn:'1/-1',textAlign:'center',padding:'60px 0',color:'#9ca3af'}}>
+            <div style={{fontSize:40,marginBottom:8}}>🍁</div>找不到符合條件的學員
+          </div>
+        )}
+      </div>
+
+      {showAdd && <Modal title="✨ 新增小楓葉" onClose={()=>setShowAdd(false)}><StuForm data={nstu} setData={setNstu} onSave={doAdd} onCancel={()=>setShowAdd(false)} isNew/></Modal>}
+      {editing && <Modal title={`✏️ 編輯 ${editing.name}`} onClose={()=>setEditing(null)}><StuForm data={editing} setData={setEditing} onSave={doSaveEdit} onCancel={()=>setEditing(null)}/></Modal>}
+
+      {/* Side Detail */}
+      {selStu && !editing && (
+        <div onClick={()=>setSel(null)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.3)',zIndex:50,display:'flex',justifyContent:'flex-end'}}>
+          <div onClick={e=>e.stopPropagation()} style={{width:'100%',maxWidth:480,background:'#fff',height:'100%',overflowY:'auto',boxShadow:'-8px 0 32px rgba(0,0,0,.15)'}}>
+            <div style={{background:'linear-gradient(135deg,#f59e0b,#fb923c)',padding:24,color:'#fff'}}>
+              <div style={{display:'flex',justifyContent:'space-between',marginBottom:16}}>
+                <button onClick={()=>setSel(null)} style={{background:'rgba(255,255,255,.2)',border:'none',color:'#fff',borderRadius:8,padding:'4px 10px',cursor:'pointer'}}>✕</button>
+                <div style={{display:'flex',gap:8}}>
+                  <button onClick={()=>setEditing({...selStu})} style={{background:'rgba(255,255,255,.2)',border:'none',color:'#fff',borderRadius:8,padding:'4px 12px',cursor:'pointer',fontSize:12}}>✏️ 編輯</button>
+                  <button onClick={()=>doDelete(selStu.id)} style={{background:'rgba(239,68,68,.6)',border:'none',color:'#fff',borderRadius:8,padding:'4px 12px',cursor:'pointer',fontSize:12}}>刪除</button>
+                </div>
+              </div>
+              <div style={{display:'flex',alignItems:'center',gap:16}}>
+                <div style={{width:60,height:60,borderRadius:16,background:'rgba(255,255,255,.3)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:28,fontWeight:800,color:'#fff'}}>{selStu.name[0]}</div>
+                <div>
+                  <div style={{fontSize:22,fontWeight:800}}>{selStu.name}</div>
+                  <div style={{fontSize:12,opacity:.9,marginTop:4}}>😇 小天使：{selStu.angel} · {selStu.cls}</div>
+                  <div style={{display:'flex',alignItems:'center',gap:8,marginTop:8}}>
+                    <Stars value={selStu.reports[selStu.reports.length-1]?.envScore||0} ro/>
+                    <Badge score={selStu.reports[selStu.reports.length-1]?.envScore||0}/>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div style={{padding:20}}>
+              <div style={{background:'#fffbf0',borderRadius:12,padding:14,marginBottom:16,fontSize:13,lineHeight:1.8}}>
+                {selStu.slashProject && <div><span style={{color:'#9ca3af'}}>🚀 斜槓項目：</span>{selStu.slashProject}</div>}
+                <div><span style={{color:'#9ca3af'}}>📱 APP：</span>{selStu.appUsage?'✓ 使用中':'未使用'}</div>
+                {selStu.consultDir && <div><span style={{color:'#9ca3af'}}>💬 諮詢方向：</span>{selStu.consultDir}</div>}
+              </div>
+              <div style={{fontWeight:700,color:'#374151',marginBottom:12}}>📋 月報紀錄（{selStu.reports.length} 份）</div>
+              {selStu.reports.length===0
+                ? <div style={{textAlign:'center',color:'#9ca3af',padding:24}}>尚無月報</div>
+                : selStu.reports.map(r=>(
+                  <div key={r.id} style={{background:'#f9fafb',borderRadius:12,padding:14,marginBottom:12}}>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+                      <span style={{fontWeight:600,color:'#b45309'}}>第 {r.month} 個月</span>
+                      <Stars value={r.envScore} ro/>
+                    </div>
+                    {REPORT_FIELDS.map(f=>r[f.key]&&(
+                      <div key={f.key} style={{marginBottom:10}}>
+                        <div style={{fontSize:11,color:'#9ca3af',fontWeight:600}}>{f.label}</div>
+                        <div style={{fontSize:12,color:'#374151',marginTop:2,lineHeight:1.7}}>{r[f.key]}</div>
+                      </div>
+                    ))}
+                  </div>
+                ))
+              }
+              {/* ── 顧問諮詢紀錄 ── */}
+              {(selStu.consultations||[]).length>0&&(
+                <div style={{marginTop:20}}>
+                  <div style={{fontWeight:700,color:'#374151',marginBottom:12}}>💼 顧問諮詢紀錄（{selStu.consultations.length} 筆）</div>
+                  {selStu.consultations.map(c=>(
+                    <div key={c.id} style={{background:'#faf5ff',border:'1px solid #e9d5ff',borderRadius:12,padding:14,marginBottom:12}}>
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+                        <span style={{fontWeight:600,color:'#7c3aed'}}>📅 {c.date}</span>
+                        <span style={{fontSize:11,color:'#9ca3af'}}>顧問：{c.consultantName||'—'}</span>
+                      </div>
+                      {[
+                        {k:'slashProject',l:'🚀 斜槓項目'},
+                        {k:'consultDirection',l:'💬 諮詢方向'},
+                        {k:'progressAssessment',l:'📊 學員進度評估'},
+                        {k:'monetizationProgress',l:'💰 變現進度'},
+                        {k:'recommendation',l:'💡 後續建議'},
+                        {k:'nextActions',l:'✅ 下一步行動'},
+                        {k:'notes',l:'🗒️ 備注'},
+                      ].map(({k,l})=>c[k]&&(
+                        <div key={k} style={{marginBottom:8}}>
+                          <div style={{fontSize:11,color:'#9ca3af',fontWeight:600}}>{l}</div>
+                          <div style={{fontSize:12,color:'#374151',marginTop:2,lineHeight:1.7}}>{c[k]}</div>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── 月報系統 ─── */
+function ReportsPage({ students, setStudents }) {
+  const [selId, setSelId] = useState(students[0]?.id||null);
+  const [selMonth, setSelMonth] = useState(null);
+  const [isEdit, setIsEdit] = useState(false);
+  const [draft, setDraft] = useState(null);
+  const [flash, setFlash] = useState(false);
+
+  const stu = students.find(s=>s.id===selId);
+  const maxM = stu ? (stu.reports.length ? Math.max(...stu.reports.map(r=>r.month)) : 0) : 0;
+  const viewR = (selMonth!=null && !isEdit) ? stu?.reports.find(r=>r.month===selMonth) : null;
+
+  const startNew = () => {
+    setDraft({ id:Date.now(), month:maxM+1, stage:`第${maxM+1}個月`, envScore:0,
+      midMonthReport:'', endMonthReport:'', learningGoals:'', mentorReflection:'', careReport:'', gained:'', notes:'' });
+    setIsEdit(true); setSelMonth(null);
+  };
+  const startEdit = r => { setDraft({...r}); setIsEdit(true); };
+  const save = () => {
+    if(!stu||!draft)return;
+    setStudents(p=>p.map(s=>{
+      if(s.id!==selId)return s;
+      const ex=s.reports.find(r=>r.id===draft.id);
+      return {...s, reports: ex ? s.reports.map(r=>r.id===draft.id?draft:r) : [...s.reports,draft]};
+    }));
+    setSelMonth(draft.month); setIsEdit(false);
+    setFlash(true); setTimeout(()=>setFlash(false),2500);
+  };
+
+  return (
+    <div style={{display:'grid',gridTemplateColumns:'240px 1fr',gap:16,alignItems:'start'}}>
+      <div>
+        {/* Student list */}
+        <div style={{background:'#fff',borderRadius:16,border:'1px solid #fef3c7',padding:12,marginBottom:12}}>
+          <div style={{fontSize:12,fontWeight:700,color:'#9ca3af',marginBottom:8}}>選擇小楓葉</div>
+          {students.map(s=>(
+            <button key={s.id} onClick={()=>{setSelId(s.id);setSelMonth(null);setIsEdit(false);}}
+              style={{display:'flex',alignItems:'center',gap:8,width:'100%',padding:'8px 10px',borderRadius:10,border:'none',
+                background:selId===s.id?'#f59e0b':'transparent',color:selId===s.id?'#fff':'#374151',
+                cursor:'pointer',marginBottom:4,textAlign:'left'}}>
+              <Avt name={s.name} sz={28}/>
+              <div>
+                <div style={{fontSize:13,fontWeight:600}}>{s.name}</div>
+                <div style={{fontSize:11,opacity:.7}}>😇 {s.angel} · {s.reports.length}份</div>
+              </div>
+            </button>
+          ))}
+        </div>
+        {/* Month list */}
+        {stu && (
+          <div style={{background:'#fff',borderRadius:16,border:'1px solid #fef3c7',padding:12}}>
+            <div style={{fontSize:12,fontWeight:700,color:'#9ca3af',marginBottom:8}}>月份紀錄</div>
+            {stu.reports.map(r=>(
+              <button key={r.id} onClick={()=>{setSelMonth(r.month);setIsEdit(false);}}
+                style={{display:'flex',alignItems:'center',justifyContent:'space-between',width:'100%',
+                  padding:'8px 10px',borderRadius:8,border:'none',
+                  background:selMonth===r.month&&!isEdit?'#f59e0b':'transparent',
+                  color:selMonth===r.month&&!isEdit?'#fff':'#374151',cursor:'pointer',marginBottom:4}}>
+                <span style={{fontSize:13}}>第 {r.month} 個月</span>
+                <Stars value={r.envScore} ro/>
+              </button>
+            ))}
+            <button onClick={startNew}
+              style={{width:'100%',padding:'8px',borderRadius:8,border:'2px dashed #fcd34d',background:'transparent',
+                color:'#b45309',cursor:'pointer',fontSize:12,marginTop:4}}>
+              ＋ 新增第 {maxM+1} 個月
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div>
+        {!stu && <div style={{background:'#fff',borderRadius:16,border:'1px solid #fef3c7',height:200,display:'flex',alignItems:'center',justifyContent:'center',color:'#9ca3af',flexDirection:'column',gap:8}}><span style={{fontSize:36}}>📋</span>請先選擇一位小楓葉</div>}
+
+        {stu && !isEdit && !viewR && (
+          <div style={{background:'#fff',borderRadius:16,border:'1px solid #fef3c7',height:200,display:'flex',alignItems:'center',justifyContent:'center',color:'#9ca3af',flexDirection:'column',gap:8}}><span style={{fontSize:36}}>🍁</span>選擇月份查看，或新增月報</div>
+        )}
+
+        {stu && !isEdit && viewR && (
+          <div style={{background:'#fff',borderRadius:16,border:'1px solid #fef3c7',overflow:'hidden'}}>
+            <div style={{background:'#fffbf0',padding:'14px 20px',borderBottom:'1px solid #fef3c7',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+              <div>
+                <div style={{fontWeight:700}}>{stu.name} — 第 {viewR.month} 個月月報</div>
+                <div style={{display:'flex',alignItems:'center',gap:8,marginTop:6}}><Stars value={viewR.envScore} ro/><Badge score={viewR.envScore}/></div>
+              </div>
+              <button onClick={()=>startEdit(viewR)} style={{padding:'6px 14px',borderRadius:8,border:'none',background:'#f59e0b',color:'#fff',cursor:'pointer',fontSize:12,fontWeight:600}}>✏️ 編輯</button>
+            </div>
+            <div style={{padding:20}}>
+              {REPORT_FIELDS.map(f=>(
+                <div key={f.key} style={{marginBottom:14}}>
+                  <div style={{fontSize:11,fontWeight:600,color:'#9ca3af',marginBottom:4}}>{f.label}</div>
+                  <div style={{background:'#f9fafb',borderRadius:8,padding:'10px 12px',fontSize:13,color:'#374151',lineHeight:1.7,minHeight:36}}>
+                    {viewR[f.key]||<span style={{color:'#d1d5db'}}>（尚未填寫）</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {stu && isEdit && draft && (
+          <div style={{background:'#fff',borderRadius:16,border:'1px solid #fef3c7',overflow:'hidden'}}>
+            <div style={{background:'#fffbf0',padding:'14px 20px',borderBottom:'1px solid #fef3c7',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+              <div style={{fontWeight:700}}>{stu.name} — 第 {draft.month} 個月{stu.reports.find(r=>r.id===draft.id)?'（編輯中）':'（新增）'}</div>
+              <div style={{display:'flex',gap:8}}>
+                <button onClick={()=>setIsEdit(false)} style={{padding:'6px 12px',borderRadius:8,border:'1px solid #e5e7eb',background:'#fff',cursor:'pointer',fontSize:12}}>取消</button>
+                <button onClick={save} style={{padding:'6px 16px',borderRadius:8,border:'none',background:flash?'#22c55e':'#f59e0b',color:'#fff',cursor:'pointer',fontSize:12,fontWeight:600,transition:'background .3s'}}>
+                  {flash?'✓ 已儲存':'儲存'}
+                </button>
+              </div>
+            </div>
+            <div style={{padding:20}}>
+              <div style={{marginBottom:16}}>
+                <div style={{fontSize:11,fontWeight:600,color:'#9ca3af',marginBottom:6}}>🌟 環境融入評分</div>
+                <Stars value={draft.envScore} onChange={v=>setDraft(d=>({...d,envScore:v}))}/>
+              </div>
+              {REPORT_FIELDS.map(f=>(
+                <Field key={f.key} label={f.label} value={draft[f.key]} onChange={v=>setDraft(d=>({...d,[f.key]:v}))} ph={`填寫...`} multi/>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ─── 行程規劃 ─── */
+const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/1BNw8pmD9lvdCs_AnAM72Nih6QiBLtzJnY91_gJGAR2Q/export?format=csv&gid=205629692';
+
+function parseCSVLine(line) {
+  const result = []; let cur = ''; let inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') { inQ = !inQ; }
+    else if (c === ',' && !inQ) { result.push(cur); cur = ''; }
+    else { cur += c; }
+  }
+  result.push(cur); return result;
+}
+
+function SchedulePage({ activities, setActivities, students }) {
+  const [showAdd, setShowAdd] = useState(false);
+  const [editItem, setEditItem] = useState(null);
+  const [fType, setFType] = useState('');
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState('');
+  const nw = { title:'', type:'group', date:'', students:[], notes:'' };
+  const [nact, setNact] = useState(nw);
+  const today = new Date().toISOString().slice(0,10);
+
+  const syncCalendar = async () => {
+    setSyncing(true); setSyncMsg('');
+    try {
+      let res;
+      try { res = await fetch(SHEET_CSV_URL, {mode:'cors'}); }
+      catch(fetchErr) {
+        setSyncMsg('⚠️ 無法連線至 Google Sheets。可能原因：\n① 試算表尚未公開（最常見）\n② 網路問題\n\n請至 Google Sheets → 共用 → 變更為「知道連結的人可檢視」，再重試。');
+        setSyncing(false); return;
+      }
+      if (!res.ok) {
+        setSyncMsg(`⚠️ 伺服器回應錯誤（${res.status}）。請確認試算表連結正確且已設為公開。`);
+        setSyncing(false); return;
+      }
+      const text = await res.text();
+      // Detect if Google redirected to login page (HTML) instead of CSV
+      if (text.trim().startsWith('<!') || text.trim().startsWith('<html')) {
+        setSyncMsg('⚠️ 試算表尚未公開，Google 要求登入才能存取。\n\n請至試算表 → 右上角「共用」→「變更為知道連結的人」→ 設為「檢視者」→ 儲存後再同步。');
+        setSyncing(false); return;
+      }
+      const lines = text.split('\n').map(l=>l.trim()).filter(Boolean);
+      if (lines.length < 2) { setSyncMsg('⚠️ 試算表內容為空（少於 2 列），請確認工作表有資料。'); setSyncing(false); return; }
+      const headers = parseCSVLine(lines[0]).map(h=>h.trim().replace(/"/g,''));
+      const find = (...kws) => headers.findIndex(h => kws.some(k => h.includes(k)));
+      const dateIdx  = find('日期','date','Date','時間','日子');
+      const titleIdx = find('標題','名稱','活動','title','Title','事項','行程','課程','內容');
+      const typeIdx  = find('類型','種類','type','Type','分類','性質');
+      const notesIdx = find('備注','備註','說明','notes','Notes','備忘','描述','內容');
+      const stuIdx   = find('學員','參加者','participant','對象','小楓葉');
+      if (dateIdx < 0 || titleIdx < 0) {
+        const found = headers.length > 0 ? `（目前偵測到的欄位名稱：${headers.join('、')}）` : '（試算表沒有欄位標題列）';
+        setSyncMsg(`⚠️ 找不到必要欄位。\n需要有包含「日期」的欄和包含「標題/名稱/活動」的欄。\n${found}\n\n請確認試算表第一列是欄位名稱。`);
+        setSyncing(false); return;
+      }
+      const typeMap = [['諮詢','consultation'],['consultation','consultation'],['團課','group'],['group','group'],['工作訪','monetization'],['變現','monetization'],['monetization','monetization']];
+      const guessType = raw => { const r=(raw||'').toLowerCase(); return (typeMap.find(([k])=>r.includes(k))||['','group'])[1]; };
+      const fmtDate = raw => {
+        if (!raw) return null;
+        raw = raw.trim().replace(/"/g,'');
+        let m = raw.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+        if (m) return `${m[1]}-${String(m[2]).padStart(2,'0')}-${String(m[3]).padStart(2,'0')}`;
+        m = raw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+        if (m) return `${m[3]}-${String(m[1]).padStart(2,'0')}-${String(m[2]).padStart(2,'0')}`;
+        return null;
+      };
+      const newEvents = [];
+      for (let i = 1; i < lines.length; i++) {
+        const cols = parseCSVLine(lines[i]).map(c=>c.trim().replace(/^"|"$/g,''));
+        const date = fmtDate(cols[dateIdx]);
+        const title = (cols[titleIdx]||'').trim();
+        if (!date || !title) continue;
+        const type = guessType(typeIdx>=0 ? cols[typeIdx] : '');
+        const notes = notesIdx>=0 ? (cols[notesIdx]||'').trim() : '';
+        const stuRaw = stuIdx>=0 ? (cols[stuIdx]||'').trim() : '';
+        const stuList = stuRaw ? stuRaw.split(/[,、，]/).map(s=>s.trim()).filter(Boolean) : [];
+        newEvents.push({ id:`sheet_${date}_${i}`, title, type, date, students:stuList, notes, fromSheet:true });
+      }
+      if (newEvents.length === 0) {
+        const rawDates = lines.slice(1,4).map(l=>parseCSVLine(l)[dateIdx]||'').join('、');
+        setSyncMsg(`⚠️ 沒有找到有效行程。\n日期欄讀到的值（前幾筆）：${rawDates||'空'}\n請確認日期格式為 2025/04/15 或 2025-04-15。`);
+        setSyncing(false); return;
+      }
+      setActivities(prev => {
+        const manual = prev.filter(a => !a.fromSheet);
+        return [...manual, ...newEvents].sort((a,b) => a.date.localeCompare(b.date));
+      });
+      setSyncMsg(`✅ 成功同步 ${newEvents.length} 筆行程！`);
+    } catch(err) {
+      setSyncMsg(`⚠️ 未知錯誤：${err.message}`);
+    }
+    setSyncing(false);
+  };
+
+  const sorted = useMemo(()=>[...activities].filter(a=>!fType||a.type===fType).sort((a,b)=>a.date.localeCompare(b.date)),[activities,fType]);
+  const upcoming = sorted.filter(a=>a.date>=today);
+  const past = sorted.filter(a=>a.date<today);
+
+  const doAdd = () => { if(!nact.title||!nact.date)return; setActivities(p=>[...p,{...nact,id:Date.now()}]); setNact(nw); setShowAdd(false); };
+  const doSave = () => { setActivities(p=>p.map(a=>a.id===editItem.id?editItem:a)); setEditItem(null); };
+  const doDel = id => setActivities(p=>p.filter(a=>a.id!==id));
+  const togStu = (data,setData,name) => setData(d=>({...d, students:d.students.includes(name)?d.students.filter(s=>s!==name):[...d.students,name]}));
+
+  const ActForm = ({ data, setData, onSave, onCancel }) => (
+    <div>
+      <Field label="行程名稱 *" value={data.title} onChange={v=>setData(d=>({...d,title:v}))} ph="例：自媒體團課..."/>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
+        <div>
+          <div style={{fontSize:11,fontWeight:600,color:'#6b7280',marginBottom:4}}>類型 *</div>
+          <select style={{...inp}} value={data.type} onChange={e=>setData(d=>({...d,type:e.target.value}))}>
+            {Object.entries(ATYPES).map(([k,v])=><option key={k} value={k}>{v.emoji} {v.label}</option>)}
+          </select>
+        </div>
+        <Field label="日期 *" value={data.date} onChange={v=>setData(d=>({...d,date:v}))} ph="YYYY-MM-DD"/>
+      </div>
+      <div style={{marginBottom:12}}>
+        <div style={{fontSize:11,fontWeight:600,color:'#6b7280',marginBottom:6}}>參加學員（可多選）</div>
+        <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+          {students.map(s=>(
+            <button key={s.id} type="button" onClick={()=>togStu(data,setData,s.name)}
+              style={{padding:'4px 12px',borderRadius:20,border:'1px solid',fontSize:12,cursor:'pointer',
+                background:data.students.includes(s.name)?'#f59e0b':'#fff',
+                color:data.students.includes(s.name)?'#fff':'#6b7280',
+                borderColor:data.students.includes(s.name)?'#f59e0b':'#e5e7eb'}}>
+              {s.name}
+            </button>
+          ))}
+        </div>
+      </div>
+      <Field label="備注" value={data.notes} onChange={v=>setData(d=>({...d,notes:v}))} ph="備注事項..." multi/>
+      <div style={{display:'flex',justifyContent:'flex-end',gap:8,marginTop:16}}>
+        <button onClick={onCancel} style={{padding:'8px 16px',borderRadius:8,border:'1px solid #e5e7eb',background:'#fff',cursor:'pointer',fontSize:13}}>取消</button>
+        <button onClick={onSave} style={{padding:'8px 20px',borderRadius:8,border:'none',background:'#f59e0b',color:'#fff',cursor:'pointer',fontSize:13,fontWeight:600}}>儲存</button>
+      </div>
+    </div>
+  );
+
+  const Card = ({ a }) => {
+    const t=ATYPES[a.type]||ATYPES.group;
+    const isPast=a.date<today;
+    return (
+      <div style={{background:'#fff',borderRadius:14,border:`1px solid ${isPast?'#f3f4f6':'#fef3c7'}`,padding:16,opacity:isPast?.75:1,display:'flex',gap:12,alignItems:'flex-start'}}>
+        <div style={{fontSize:28}}>{t.emoji}</div>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+            <span style={{background:t.bg,color:t.text,border:`1px solid ${t.border}`,padding:'2px 8px',borderRadius:8,fontSize:11}}>{t.label}</span>
+            <span style={{fontSize:13,fontWeight:600}}>{a.title}</span>
+          </div>
+          <div style={{fontSize:11,color:'#9ca3af',marginTop:4}}>{a.date}{isPast?' （已過）':''}{a.fromSheet && <span style={{marginLeft:6,fontSize:10,background:'#eff6ff',color:'#1d4ed8',padding:'1px 6px',borderRadius:6}}>🔗 行事曆</span>}</div>
+          {a.students.length>0 && <div style={{fontSize:11,color:'#6b7280',marginTop:2}}>👤 {a.students.join('、')}</div>}
+          {a.notes && <div style={{fontSize:11,color:'#9ca3af',marginTop:2,fontStyle:'italic'}}>{a.notes}</div>}
+        </div>
+        <div style={{display:'flex',gap:4,flexShrink:0}}>
+          <button onClick={()=>setEditItem({...a})} style={{background:'none',border:'none',cursor:'pointer',fontSize:14,opacity:.5,padding:4}}>✏️</button>
+          <button onClick={()=>doDel(a.id)} style={{background:'none',border:'none',cursor:'pointer',fontSize:14,opacity:.5,padding:4}}>🗑️</button>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div>
+      <div style={{display:'flex',gap:10,marginBottom:syncMsg?8:16,flexWrap:'wrap',alignItems:'center'}}>
+        <div style={{display:'flex',gap:4,background:'#fff',border:'1px solid #fef3c7',borderRadius:12,padding:4}}>
+          {[['','全部'],['consultation','💬 諮詢'],['group','👥 團課'],['monetization','💰 工作訪']].map(([k,l])=>(
+            <button key={k} onClick={()=>setFType(k)}
+              style={{padding:'6px 12px',borderRadius:8,border:'none',fontSize:12,cursor:'pointer',
+                background:fType===k?'#f59e0b':'transparent',color:fType===k?'#fff':'#6b7280'}}>
+              {l}
+            </button>
+          ))}
+        </div>
+        <button onClick={syncCalendar} disabled={syncing}
+          style={{padding:'7px 14px',borderRadius:10,border:'1px solid #bfdbfe',background:'#eff6ff',color:'#1d4ed8',cursor:syncing?'wait':'pointer',fontSize:12,fontWeight:600,opacity:syncing?.7:1}}>
+          {syncing?'⏳ 同步中...':'🔗 同步行事曆'}
+        </button>
+        <button onClick={()=>setShowAdd(true)}
+          style={{marginLeft:'auto',padding:'8px 16px',borderRadius:10,border:'none',background:'#f59e0b',color:'#fff',cursor:'pointer',fontSize:13,fontWeight:600}}>
+          ＋ 新增行程
+        </button>
+      </div>
+      {syncMsg && (
+        <div style={{marginBottom:14,padding:'12px 16px',borderRadius:10,fontSize:13,whiteSpace:'pre-line',lineHeight:1.7,
+          background:syncMsg.startsWith('✅')?'#f0fdf4':'#fffbeb',
+          color:syncMsg.startsWith('✅')?'#15803d':'#92400e',
+          border:`1px solid ${syncMsg.startsWith('✅')?'#bbf7d0':'#fde68a'}`}}>
+          {syncMsg}
+        </div>
+      )}
+
+      {upcoming.length>0 && (
+        <div style={{marginBottom:20}}>
+          <div style={{fontSize:13,fontWeight:700,color:'#6b7280',marginBottom:10}}>📅 即將到來 ({upcoming.length})</div>
+          <div style={{display:'flex',flexDirection:'column',gap:10}}>{upcoming.map(a=><Card key={a.id} a={a}/>)}</div>
+        </div>
+      )}
+      {past.length>0 && (
+        <div>
+          <div style={{fontSize:13,fontWeight:700,color:'#9ca3af',marginBottom:10}}>⏰ 歷史記錄 ({past.length})</div>
+          <div style={{display:'flex',flexDirection:'column',gap:10}}>{past.map(a=><Card key={a.id} a={a}/>)}</div>
+        </div>
+      )}
+      {sorted.length===0 && (
+        <div style={{background:'#fff',borderRadius:16,border:'1px solid #fef3c7',padding:60,textAlign:'center',color:'#9ca3af'}}>
+          <div style={{fontSize:40,marginBottom:8}}>📅</div>目前沒有行程
+        </div>
+      )}
+
+      {showAdd && <Modal title="✨ 新增行程" onClose={()=>setShowAdd(false)}><ActForm data={nact} setData={setNact} onSave={doAdd} onCancel={()=>setShowAdd(false)}/></Modal>}
+      {editItem && <Modal title="✏️ 編輯行程" onClose={()=>setEditItem(null)}><ActForm data={editItem} setData={setEditItem} onSave={doSave} onCancel={()=>setEditItem(null)}/></Modal>}
+    </div>
+  );
+}
+
+/* ─── 主 APP ─── */
+const TABS = [
+  { id:'dashboard', l:'📊 儀表板' },
+  { id:'students',  l:'🍁 學員管理' },
+  { id:'reports',   l:'📋 月報系統' },
+  { id:'schedule',  l:'📅 行程規劃' },
+];
+
+/* ─── localStorage 持久化 ─── */
+function loadStudentsFromStorage() {
+  try {
+    const raw = localStorage.getItem('crm_students');
+    return raw ? JSON.parse(raw) : INIT_STUDENTS;
+  } catch { return INIT_STUDENTS; }
+}
+function loadProcessedIdsFromStorage() {
+  try {
+    const raw = localStorage.getItem('crm_processed_ids');
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch { return new Set(); }
+}
+
+function App() {
+  const [tab, setTab] = useState('dashboard');
+  const [students, setStudents] = useState(loadStudentsFromStorage);
+  const [activities, setActivities] = useState(INIT_ACTIVITIES);
+  const [msg, setMsg] = useState('');
+  const fileRef = useRef();
+
+  /* ─── Firebase Auth 狀態 ─── */
+  const [authed, setAuthed] = useState(false);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [loginLoading, setLoginLoading] = useState(false);
+
+  /* ─── Firestore 已處理 ID（避免重複匯入）─── */
+  const processedIds = useRef(loadProcessedIdsFromStorage());
+
+  const showMsg = m => { setMsg(m); setTimeout(()=>setMsg(''),3000); };
+
+  /* ─── 學員資料存 localStorage ─── */
+  useEffect(() => {
+    try { localStorage.setItem('crm_students', JSON.stringify(students)); } catch {}
+  }, [students]);
+
+  /* ─── 監聽 Firebase Auth 狀態 ─── */
+  useEffect(() => {
+    const unsub = window.auth.onAuthStateChanged(u => {
+      setAuthed(!!u);
+      setAuthLoading(false);
+    });
+    return unsub;
+  }, []);
+
+  /* ─── Firestore onSnapshot 即時監聽（登入後才啟動）─── */
+  useEffect(() => {
+    if (!authed) return;
+    const unsub = window.db.collection('reports')
+      .orderBy('timestamp', 'desc')
+      .onSnapshot(snapshot => {
+        snapshot.docChanges().forEach(change => {
+          if (change.type !== 'added') return;
+          const docId = change.doc.id;
+          if (processedIds.current.has(docId)) return;
+          processedIds.current.add(docId);
+          try {
+            const raw = localStorage.getItem('crm_processed_ids');
+            const arr = raw ? JSON.parse(raw) : [];
+            arr.push(docId);
+            localStorage.setItem('crm_processed_ids', JSON.stringify(arr));
+          } catch {}
+          processFirestoreDoc(change.doc.id, change.doc.data());
+        });
+      }, err => {
+        console.error('onSnapshot error:', err);
+      });
+    return unsub;
+  }, [authed]);
+
+  /* ─── 處理 Firestore 新文件（同 doImport 的合併邏輯）─── */
+  function processFirestoreDoc(docId, d) {
+    if (d.source === 'angel_subform') {
+      const newR = { id: docId, month: d.month, stage: d.stage, ...d.report };
+      setStudents(prev => {
+        const exists = prev.some(s => s.name === d.studentName);
+        if (exists) {
+          return prev.map(s => {
+            if (s.name !== d.studentName) return s;
+            const idx = s.reports.findIndex(r => r.month === d.month);
+            const reports = idx >= 0
+              ? s.reports.map((r, i) => i === idx ? newR : r)
+              : [...s.reports, newR].sort((a, b) => a.month - b.month);
+            return { ...s, reports };
+          });
+        } else {
+          const newStu = { id: Date.now(), name: d.studentName, angel: d.submittedBy?.name || '', cls: '', appUsage: false, slashProject: '', consultDir: '', reports: [newR], consultations: [] };
+          return [...prev, newStu];
+        }
+      });
+      showMsg(`🔔 即時收到小天使【${d.submittedBy?.name || ''}】的月報 → ${d.studentName}・${d.stage}`);
+    } else if (d.source === 'consultant_subform') {
+      const newC = { id: docId, ...d.consultation, consultantName: d.submittedBy?.name || '' };
+      setStudents(prev => {
+        const exists = prev.some(s => s.name === d.studentName);
+        if (exists) {
+          return prev.map(s => {
+            if (s.name !== d.studentName) return s;
+            const consultations = [...(s.consultations || []), newC].sort((a, b) => b.date.localeCompare(a.date));
+            const upd = { consultations };
+            if (d.consultation?.slashProject) upd.slashProject = d.consultation.slashProject;
+            if (d.consultation?.consultDirection) upd.consultDir = d.consultation.consultDirection;
+            return { ...s, ...upd };
+          });
+        } else {
+          const newStu = { id: Date.now(), name: d.studentName, angel: '', cls: '', appUsage: false,
+            slashProject: d.consultation?.slashProject || '',
+            consultDir: d.consultation?.consultDirection || '',
+            reports: [], consultations: [newC] };
+          return [...prev, newStu];
+        }
+      });
+      showMsg(`🔔 即時收到顧問【${d.submittedBy?.name || ''}】的諮詢紀錄 → ${d.studentName}`);
+    }
+  }
+
+  /* ─── 登入 ─── */
+  const doLogin = async () => {
+    setLoginError('');
+    setLoginLoading(true);
+    try {
+      await window.auth.signInWithEmailAndPassword(loginEmail, loginPassword);
+    } catch (err) {
+      setLoginError('登入失敗：' + (err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found' ? '帳號或密碼錯誤' : err.message));
+    }
+    setLoginLoading(false);
+  };
+
+  /* ─── 登出 ─── */
+  const doLogout = async () => {
+    if (!window.confirm('確定要登出嗎？')) return;
+    await window.auth.signOut();
+  };
+
+  /* ─── 載入中或未登入 → 顯示登入畫面 ─── */
+  if (authLoading) {
+    return (
+      <div style={{minHeight:'100vh',background:'#fffbf0',display:'flex',alignItems:'center',justifyContent:'center'}}>
+        <div style={{fontSize:32}}>🍁</div>
+      </div>
+    );
+  }
+
+  if (!authed) {
+    return (
+      <div style={{minHeight:'100vh',background:'linear-gradient(135deg,#fef3c7,#fffbf0)',display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
+        <div style={{background:'#fff',borderRadius:24,boxShadow:'0 20px 60px rgba(0,0,0,.12)',padding:'40px 36px',width:'100%',maxWidth:380}}>
+          <div style={{textAlign:'center',marginBottom:28}}>
+            <div style={{fontSize:48,marginBottom:8}}>🍁</div>
+            <div style={{fontSize:22,fontWeight:800,color:'#92400e'}}>小楓葉 CRM</div>
+            <div style={{fontSize:13,color:'#9ca3af',marginTop:4}}>僅限授權管理員登入</div>
+          </div>
+          <div style={{marginBottom:16}}>
+            <div style={{fontSize:12,fontWeight:600,color:'#6b7280',marginBottom:5}}>電子郵件</div>
+            <input
+              type="email"
+              value={loginEmail}
+              onChange={e=>setLoginEmail(e.target.value)}
+              onKeyDown={e=>e.key==='Enter'&&doLogin()}
+              placeholder="your@email.com"
+              style={{width:'100%',border:'1.5px solid #e5e7eb',borderRadius:10,padding:'10px 14px',fontSize:14,outline:'none',fontFamily:'inherit'}}
+            />
+          </div>
+          <div style={{marginBottom:20}}>
+            <div style={{fontSize:12,fontWeight:600,color:'#6b7280',marginBottom:5}}>密碼</div>
+            <input
+              type="password"
+              value={loginPassword}
+              onChange={e=>setLoginPassword(e.target.value)}
+              onKeyDown={e=>e.key==='Enter'&&doLogin()}
+              placeholder="••••••••"
+              style={{width:'100%',border:'1.5px solid #e5e7eb',borderRadius:10,padding:'10px 14px',fontSize:14,outline:'none',fontFamily:'inherit'}}
+            />
+          </div>
+          {loginError && (
+            <div style={{background:'#fef2f2',border:'1px solid #fecaca',borderRadius:8,padding:'10px 14px',fontSize:13,color:'#b91c1c',marginBottom:16}}>
+              {loginError}
+            </div>
+          )}
+          <button
+            onClick={doLogin}
+            disabled={loginLoading}
+            style={{width:'100%',padding:'12px',background:'linear-gradient(135deg,#d97706,#ea580c)',border:'none',borderRadius:12,color:'#fff',fontSize:15,fontWeight:700,cursor:'pointer',fontFamily:'inherit',opacity:loginLoading?.7:1}}>
+            {loginLoading ? '登入中...' : '🔐 登入'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  /* 匯出學員名單（供小天使 / 顧問表單載入使用） */
+  const doExportStudentList = () => {
+    if(students.length===0){ showMsg('⚠️ 目前沒有任何學員資料'); return; }
+    const list = { source:'student_list', exportedAt:new Date().toISOString(), students:students.map(s=>s.name) };
+    const blob = new Blob([JSON.stringify(list,null,2)],{type:'application/json'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `學員名單_${new Date().toISOString().slice(0,10)}.json`;
+    a.click(); URL.revokeObjectURL(a.href);
+    showMsg(`✓ 已匯出 ${students.length} 位學員名單 → 匯入表單即可變成下拉選單`);
+  };
+
+  /* 清除所有學員資料 */
+  const doClearStudents = () => {
+    if(!window.confirm(`⚠️ 確定要清除所有 ${students.length} 位學員資料嗎？\n此動作無法復原，建議先備份。`)) return;
+    setStudents([]); showMsg('✓ 已清除所有學員資料');
+  };
+
+  const doExport = () => {
+    const now = new Date().toLocaleDateString('zh-TW');
+    const nowISO = new Date().toISOString().slice(0,10);
+    const esc = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+    const starsHTML = n => '★'.repeat(n||0)+'☆'.repeat(5-(n||0));
+    const scoreLabel = n => (['—','待追蹤','需關注','需關注','穩定推進','融入良好'][n]||'—');
+    const totalReports = students.reduce((s,st)=>s+(st.reports?.length||0),0);
+    const totalConsults = students.reduce((s,st)=>s+(st.consultations?.length||0),0);
+    const allScores = students.flatMap(s=>s.reports?.map(r=>r.envScore).filter(Boolean)||[]);
+    const avgScore = allScores.length?(allScores.reduce((a,b)=>a+b,0)/allScores.length).toFixed(1):'—';
+    const upcomingActs = [...activities].filter(a=>a.date>=nowISO).sort((a,b)=>a.date.localeCompare(b.date)).slice(0,15);
+
+    const actHTML = upcomingActs.length>0 ? upcomingActs.map(a=>{
+      const t=ATYPES[a.type]||ATYPES.group;
+      return `<div class="act-row"><span class="act-date">${esc(a.date)}</span><span class="act-em">${t.emoji}</span><span class="act-lbl" style="background:${t.bg};color:${t.text}">${t.label}</span><span class="act-title">${esc(a.title)}</span>${a.students?.length>0?`<span class="act-stus">👤 ${esc(a.students.join('、'))}</span>`:''}</div>`;
+    }).join('') : '<div class="empty-note">目前無即將到來的行程</div>';
+
+    const studentHTML = students.map(s=>{
+      const reports=s.reports||[]; const consults=s.consultations||[];
+      const latestScore=reports.length?reports[reports.length-1].envScore||0:0;
+      const scoreColor=latestScore>=4?'#15803d':latestScore>=3?'#b45309':latestScore>=2?'#c2410c':'#9ca3af';
+      const scoreBg=latestScore>=4?'#dcfce7':latestScore>=3?'#fef3c7':latestScore>=2?'#ffedd5':'#f3f4f6';
+      const reportsHTML=reports.length>0?reports.map(r=>`
+        <div class="rec">
+          <div class="rec-hd">
+            <span class="bdg-stage">${esc(r.stage||'第'+r.month+'個月')}</span>
+            <span class="stars">${starsHTML(r.envScore)}</span>
+            <span class="score-txt">${scoreLabel(r.envScore)}</span>
+          </div>
+          ${r.monthlyReport?`<div class="fw"><div class="fl">📋 本月狀況</div><div class="fv">${esc(r.monthlyReport)}</div></div>`:''}
+          ${r.midMonthReport?`<div class="fw"><div class="fl">📌 月中回報</div><div class="fv">${esc(r.midMonthReport)}</div></div>`:''}
+          ${r.endMonthReport?`<div class="fw"><div class="fl">📋 月底回報</div><div class="fv">${esc(r.endMonthReport)}</div></div>`:''}
+          ${r.learningGoals?`<div class="fw"><div class="fl">🎯 學習目標</div><div class="fv">${esc(r.learningGoals)}</div></div>`:''}
+          ${r.mentorReflection?`<div class="fw"><div class="fl">💭 學伴心得</div><div class="fv">${esc(r.mentorReflection)}</div></div>`:''}
+          ${r.notes?`<div class="fw"><div class="fl">🗒️ 備注</div><div class="fv">${esc(r.notes)}</div></div>`:''}
+        </div>`).join(''):'<div class="empty-note">尚無月報記錄</div>';
+      const consultsHTML=consults.length>0?consults.map(c=>`
+        <div class="rec consult">
+          <div class="rec-hd">
+            <span class="bdg-date">${esc(c.date||'')}</span>
+            <span class="clbl">顧問：${esc(c.consultantName||'—')}</span>
+          </div>
+          ${c.consultDirection?`<div class="fw"><div class="fl">🎯 諮詢方向</div><div class="fv">${esc(c.consultDirection)}</div></div>`:''}
+          ${c.progressAssessment?`<div class="fw"><div class="fl">📈 進度評估</div><div class="fv">${esc(c.progressAssessment)}</div></div>`:''}
+          ${c.monetizationProgress?`<div class="fw"><div class="fl">💰 變現進度</div><div class="fv">${esc(c.monetizationProgress)}</div></div>`:''}
+          ${(c.recommendationAndActions||c.recommendation)?`<div class="fw"><div class="fl">💡 建議 & 行動</div><div class="fv">${esc(c.recommendationAndActions||c.recommendation||'')}</div></div>`:''}
+          ${(c.nextActions&&!c.recommendationAndActions)?`<div class="fw"><div class="fl">🚀 下一步</div><div class="fv">${esc(c.nextActions)}</div></div>`:''}
+          ${c.notes?`<div class="fw"><div class="fl">🗒️ 備注</div><div class="fv">${esc(c.notes)}</div></div>`:''}
+        </div>`).join(''):'';
+      return `
+      <div class="stu-card">
+        <div class="stu-top">
+          <div class="avt">${esc(s.name?.[0]||'?')}</div>
+          <div class="stu-info">
+            <div class="stu-name">${esc(s.name)}</div>
+            <div class="stu-meta">👼 小天使：${esc(s.angel||'—')} ｜ 班別：${esc(s.cls||'—')} ｜ APP：${s.appUsage?'✅ 使用中':'❌'}</div>
+            ${s.slashProject?`<div class="stu-meta">斜槓方向：<strong>${esc(s.slashProject)}</strong></div>`:''}
+            ${s.consultDir?`<div class="stu-meta">顧問方向：${esc(s.consultDir)}</div>`:''}
+          </div>
+          <div class="score-box" style="background:${scoreBg};color:${scoreColor}">
+            <div>${starsHTML(latestScore)}</div>
+            <div style="font-size:11px;font-weight:600;margin-top:2px">${scoreLabel(latestScore)}</div>
+          </div>
+        </div>
+        <div class="sec-ttl">📋 月報記錄（${reports.length} 份）</div>${reportsHTML}
+        ${consults.length>0?`<div class="sec-ttl" style="margin-top:14px">💼 顧問諮詢（${consults.length} 次）</div>${consultsHTML}`:''}
+      </div>`;
+    }).join('');
+
+    const html = `<!DOCTYPE html>
+<html lang="zh-TW"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>🍁 小楓葉 CRM 分析報告｜${now}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft JhengHei',sans-serif;background:#f8f9fa;color:#1f2937;line-height:1.65}
+.page{max-width:900px;margin:0 auto;padding:32px 20px}
+.hd{background:linear-gradient(135deg,#d97706,#ea580c);color:#fff;border-radius:16px;padding:28px 32px;margin-bottom:24px}
+.hd h1{font-size:24px;font-weight:800;margin-bottom:4px}
+.hd .sub{font-size:13px;opacity:.85}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px}
+.stat{background:#fff;border:1px solid #fef3c7;border-radius:12px;padding:18px;text-align:center}
+.stat-n{font-size:30px;font-weight:800;color:#b45309}
+.stat-l{font-size:12px;color:#9ca3af;margin-top:4px}
+.wrap{background:#fff;border-radius:16px;border:1px solid #fef3c7;padding:24px;margin-bottom:20px}
+.wrap h2{font-size:16px;font-weight:700;color:#374151;margin-bottom:16px;padding-bottom:10px;border-bottom:2px solid #fef3c7}
+.stu-card{border:1px solid #f3f4f6;border-radius:12px;padding:18px;margin-bottom:14px;background:#fffbf0}
+.stu-top{display:flex;align-items:flex-start;gap:12px;margin-bottom:12px}
+.avt{width:42px;height:42px;border-radius:21px;background:#fef3c7;color:#b45309;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:17px;flex-shrink:0}
+.stu-info{flex:1}
+.stu-name{font-size:17px;font-weight:800;margin-bottom:4px}
+.stu-meta{font-size:12px;color:#6b7280;margin-top:2px}
+.score-box{border-radius:10px;padding:10px 14px;text-align:center;min-width:76px;flex-shrink:0;font-size:14px}
+.sec-ttl{font-size:13px;font-weight:700;color:#374151;margin-bottom:8px;margin-top:10px}
+.rec{border:1px solid #e5e7eb;border-radius:10px;padding:14px;margin-bottom:10px;background:#fff}
+.rec.consult{border-color:#e9d5ff}
+.rec-hd{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+.bdg-stage{background:#fef3c7;color:#b45309;padding:2px 10px;border-radius:20px;font-size:12px;font-weight:600}
+.bdg-date{background:#eff6ff;color:#1d4ed8;padding:2px 10px;border-radius:20px;font-size:12px;font-weight:600}
+.stars{font-size:15px;color:#f59e0b;letter-spacing:1px}
+.score-txt{font-size:11px;color:#9ca3af}
+.clbl{font-size:12px;color:#7c3aed;font-weight:600}
+.fw{margin-bottom:8px}
+.fl{font-size:11px;font-weight:700;color:#9ca3af;margin-bottom:2px}
+.fv{font-size:13px;color:#374151;white-space:pre-wrap}
+.empty-note{font-size:13px;color:#9ca3af;padding:10px 0;font-style:italic}
+.act-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #f3f4f6;flex-wrap:wrap}
+.act-date{font-size:12px;color:#9ca3af;min-width:85px;font-variant-numeric:tabular-nums}
+.act-em{font-size:16px}
+.act-lbl{font-size:11px;padding:2px 8px;border-radius:6px;font-weight:600}
+.act-title{font-size:13px;font-weight:600;flex:1}
+.act-stus{font-size:11px;color:#6b7280}
+.ft{text-align:center;padding:20px 0 0;font-size:12px;color:#9ca3af}
+@media print{body{background:#fff}.page{padding:12px}}
+@media(max-width:600px){.stats{grid-template-columns:1fr 1fr}.stu-top{flex-wrap:wrap}}
+</style></head>
+<body><div class="page">
+  <div class="hd"><h1>🍁 小楓葉 CRM 分析報告</h1><div class="sub">匯出日期：${now} ｜ 斜槓教育培育系統</div></div>
+  <div class="stats">
+    <div class="stat"><div class="stat-n">${students.length}</div><div class="stat-l">學員總數</div></div>
+    <div class="stat"><div class="stat-n">${totalReports}</div><div class="stat-l">月報記錄</div></div>
+    <div class="stat"><div class="stat-n">${totalConsults}</div><div class="stat-l">諮詢紀錄</div></div>
+    <div class="stat"><div class="stat-n">${avgScore}</div><div class="stat-l">平均融入分數</div></div>
+  </div>
+  <div class="wrap"><h2>📅 即將到來的行程（最近 15 筆）</h2>${actHTML}</div>
+  <div class="wrap"><h2>👤 學員詳細資料（${students.length} 位）</h2>${studentHTML||'<div class="empty-note">尚無學員資料</div>'}</div>
+  <div class="ft">🍁 小楓葉 CRM · 斜槓教育培育系統 · 匯出於 ${now}</div>
+</div></body></html>`;
+
+    const blob = new Blob([html],{type:'text/html;charset=utf-8'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `小楓葉CRM分析報告_${nowISO}.html`; a.click();
+    URL.revokeObjectURL(a.href);
+    showMsg('✓ 分析報告已匯出！直接雙擊 HTML 檔即可開啟瀏覽 🎉');
+  };
+
+  const doImport = e => {
+    const f=e.target.files?.[0]; if(!f)return;
+    const r=new FileReader();
+    r.onload = ev => {
+      try {
+        const d=JSON.parse(ev.target.result);
+        if(d.source==='angel_subform'){
+          /* 小天使月報匯入：找到學員更新，找不到則自動新增學員 */
+          const newR={id:Date.now(),month:d.month,stage:d.stage,...d.report};
+          setStudents(prev=>{
+            const exists=prev.some(s=>s.name===d.studentName);
+            if(exists){
+              return prev.map(s=>{
+                if(s.name!==d.studentName)return s;
+                const idx=s.reports.findIndex(r=>r.month===d.month);
+                const reports=idx>=0?s.reports.map((r,i)=>i===idx?newR:r):[...s.reports,newR].sort((a,b)=>a.month-b.month);
+                return{...s,reports};
+              });
+            } else {
+              const newStu={id:Date.now(),name:d.studentName,angel:d.submittedBy?.name||'',cls:'',appUsage:false,slashProject:'',consultDir:'',reports:[newR],consultations:[]};
+              return [...prev,newStu];
+            }
+          });
+          showMsg(`✓ 已匯入小天使【${d.submittedBy?.name||''}】的月報 → ${d.studentName}・${d.stage}`);
+        } else if(d.source==='consultant_subform'){
+          /* 顧問紀錄匯入：找到學員更新，找不到則自動新增學員 */
+          setStudents(prev=>{
+            const exists=prev.some(s=>s.name===d.studentName);
+            const newC={id:Date.now(),...d.consultation,consultantName:d.submittedBy?.name||''};
+            if(exists){
+              return prev.map(s=>{
+                if(s.name!==d.studentName)return s;
+                const consultations=[...(s.consultations||[]),newC].sort((a,b)=>b.date.localeCompare(a.date));
+                const upd={consultations};
+                if(d.consultation?.slashProject)upd.slashProject=d.consultation.slashProject;
+                if(d.consultation?.consultDirection)upd.consultDir=d.consultation.consultDirection;
+                return{...s,...upd};
+              });
+            } else {
+              const newStu={id:Date.now(),name:d.studentName,angel:'',cls:'',appUsage:false,
+                slashProject:d.consultation?.slashProject||'',
+                consultDir:d.consultation?.consultDirection||'',
+                reports:[],consultations:[newC]};
+              return [...prev,newStu];
+            }
+          });
+          showMsg(`✓ 已匯入顧問【${d.submittedBy?.name||''}】的諮詢紀錄 → ${d.studentName}`);
+        } else {
+          /* 全資料匯入（備份檔） */
+          if(d.students)setStudents(d.students);
+          if(d.activities)setActivities(d.activities);
+          showMsg('✓ 全資料匯入成功！');
+        }
+      } catch { showMsg('⚠️ 檔案格式有誤，請確認是 JSON 格式'); }
+    };
+    r.readAsText(f); e.target.value='';
+  };
+
+  return (
+    <div style={{minHeight:'100vh',background:'#fffbf0'}}>
+      {/* Header */}
+      <div style={{background:'linear-gradient(135deg,#d97706,#ea580c)',color:'#fff',position:'sticky',top:0,zIndex:30}}>
+        <div style={{maxWidth:1100,margin:'0 auto',padding:'12px 20px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+          <div style={{display:'flex',alignItems:'center',gap:12}}>
+            <span style={{fontSize:28}}>🍁</span>
+            <div>
+              <div style={{fontWeight:800,fontSize:18,lineHeight:1.2}}>小楓葉 CRM</div>
+              <div style={{fontSize:11,opacity:.8}}>斜槓學員成長追蹤系統</div>
+            </div>
+          </div>
+          <div style={{display:'flex',gap:8}}>
+            <input ref={fileRef} type="file" accept=".json" style={{display:'none'}} onChange={doImport}/>
+            <button onClick={()=>fileRef.current.click()} style={{background:'rgba(255,255,255,.2)',border:'none',color:'#fff',padding:'6px 14px',borderRadius:8,cursor:'pointer',fontSize:12}}>📥 匯入回報 / 備份</button>
+            <button onClick={doExportStudentList} style={{background:'rgba(255,255,255,.2)',border:'none',color:'#fff',padding:'6px 14px',borderRadius:8,cursor:'pointer',fontSize:12}}>📋 匯出學員名單</button>
+            <button onClick={doExport} style={{background:'rgba(255,255,255,.2)',border:'none',color:'#fff',padding:'6px 14px',borderRadius:8,cursor:'pointer',fontSize:12}}>📤 備份匯出</button>
+            <button onClick={doClearStudents} style={{background:'rgba(220,38,38,.35)',border:'none',color:'#fff',padding:'6px 14px',borderRadius:8,cursor:'pointer',fontSize:12}}>🗑️ 清除學員</button>
+            <button onClick={doLogout} style={{background:'rgba(255,255,255,.15)',border:'1px solid rgba(255,255,255,.3)',color:'#fff',padding:'6px 14px',borderRadius:8,cursor:'pointer',fontSize:12}}>🔓 登出</button>
+          </div>
+        </div>
+        {/* Tabs */}
+        <div style={{maxWidth:1100,margin:'0 auto',padding:'0 20px',display:'flex',gap:4}}>
+          {TABS.map(t=>(
+            <button key={t.id} onClick={()=>setTab(t.id)}
+              style={{padding:'10px 16px',border:'none',fontSize:13,cursor:'pointer',borderRadius:'8px 8px 0 0',
+                background:tab===t.id?'#fffbf0':'transparent',
+                color:tab===t.id?'#b45309':'rgba(255,255,255,.85)',fontWeight:tab===t.id?700:400}}>
+              {t.l}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Share tip */}
+      <div style={{background:'#fef9ec',borderBottom:'1px solid #fde68a',padding:'8px 20px',textAlign:'center',fontSize:12,color:'#92400e'}}>
+        🔥 <strong>即時模式已啟動：</strong>小天使 / 顧問填完表單送出後，CRM 會自動即時更新，無需手動匯入。「📥 匯入回報 / 備份」可用於匯入備份 JSON 或離線補錄資料。
+      </div>
+
+      {/* Message toast */}
+      {msg && (
+        <div style={{position:'fixed',top:80,right:20,zIndex:200,background:'#fff',border:'1px solid #fde68a',
+          boxShadow:'0 4px 20px rgba(0,0,0,.15)',borderRadius:12,padding:'12px 18px',fontSize:13,color:'#92400e',maxWidth:360}}>
+          {msg}
+        </div>
+      )}
+
+      {/* Page Content */}
+      <div style={{maxWidth:1100,margin:'0 auto',padding:20}}>
+        {tab==='dashboard' && <Dashboard students={students} activities={activities}/>}
+        {tab==='students'  && <StudentsPage students={students} setStudents={setStudents}/>}
+        {tab==='reports'   && <ReportsPage students={students} setStudents={setStudents}/>}
+        {tab==='schedule'  && <SchedulePage activities={activities} setActivities={setActivities} students={students}/>}
+      </div>
+
+      <div style={{textAlign:'center',padding:'24px 0 32px',fontSize:11,color:'#d1d5db'}}>
+        🍁 小楓葉 CRM · 斜槓教育培育系統 · {new Date().getFullYear()}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
